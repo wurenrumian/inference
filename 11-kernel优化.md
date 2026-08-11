@@ -279,3 +279,5 @@ python3 code/ch11_flash_attention.py
 - 修改 `flash_attention` 的 `block_q` 与 `block_kv`，验证结果不变。真实 kernel 中这两个值由 SRAM 容量与寄存器数量决定。
 - 去掉 `alpha` 的重缩放（即不处理最大值的更新），观察结果如何出错。这能说明 online softmax 中那一步的必要性。
 - 把因果掩码去掉，比较耗时。因果掩码让计算量减半，但需要 kernel 能跳过整块被掩码的部分——代码中的 `if np.all(np.isneginf(s)): continue` 就是这个优化。
+
+本章讲的是算法。这些算法在 GPU 上具体怎么执行——线程块与 warp 的划分、共享内存的使用、tensor core 的 MMA 指令、为什么 occupancy 会限制融合的收益——见附录 A。
