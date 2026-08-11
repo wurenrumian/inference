@@ -173,7 +173,6 @@ def part4():
     print("\n关键问题：batch 增大时，被激活的专家集合迅速覆盖全部专家。")
     print("%10s %16s %18s %16s"
           % ("batch", "期望激活专家数", "需读取的权重(GB)", "相对单token"))
-    import math
     for b in (1, 2, 4, 8, 16, 32, 64, 128):
         # 每个 token 独立选 top_k 个专家时，某个专家未被任何 token 选中的概率
         p_miss = (1.0 - float(top_k) / n_exp) ** b
@@ -182,8 +181,45 @@ def part4():
         print("%10d %16.1f %18.1f %15.1fx"
               % (b, expected, rd / 1e9, rd / float(active)))
     print("\nbatch 32 时几乎全部专家都要读一遍，权重访存量接近稠密模型，")
-    print("而计算量仍然只有激活部分。**MoE 在 decode 阶段的算术强度低于")
-    print("同等激活参数量的稠密模型**，这是它部署困难的根本原因。")
+    print("而计算量仍然只有激活部分。")
+
+    part4b()
+
+
+def part4b():
+    """MoE 与同等激活参数量的稠密模型的算术强度对比。"""
+    print("\n--- 算术强度对比：Mixtral-8x7B 类配置 ---")
+    n_exp, top_k, layers = 8, 2, 32
+    hidden, inter = 4096, 14336
+    attn_params = layers * (4 * hidden * hidden)      # QKVO，粗略估计
+    exp_params = 3 * hidden * inter                   # 一个专家
+    total = attn_params + layers * n_exp * exp_params
+    active = attn_params + layers * top_k * exp_params
+    print("总参数 %.1fB，激活参数 %.1fB，激活比例 %.1f%%"
+          % (total / 1e9, active / 1e9, 100.0 * active / total))
+    print("\n%8s %12s %14s %12s %16s %10s"
+          % ("batch", "激活专家数", "MoE访存(GB)", "MoE强度",
+             "同激活量稠密强度", "比值"))
+    for b in (1, 4, 8, 16, 32, 64, 128):
+        cov = n_exp * (1.0 - (1.0 - float(top_k) / n_exp) ** b)
+        mem = (attn_params + layers * cov * exp_params) * 2
+        comp = 2.0 * active * b
+        dense = comp / (active * 2.0)
+        print("%8d %12.1f %14.1f %12.1f %16.1f %9.2f"
+              % (b, cov, mem / 1e9, comp / mem, dense,
+                 (comp / mem) / dense))
+    print("\nbatch 足够大时访存量固定为全部参数量，计算量为激活参数量乘 batch，")
+    print("因此：")
+    print("    MoE 的算术强度 = batch × (激活参数量 / 总参数量)")
+    print("本例的激活比例是 %.1f%%，所以算术强度只有同 batch 稠密模型的"
+          % (100.0 * active / total))
+    print("%.1f%%（表中最后一列）。**稀疏度越高，decode 阶段越吃亏**："
+          % (100.0 * active / total))
+    print("激活比例 5% 的配置，算术强度只有稠密模型的二十分之一。")
+    print("这是 MoE 部署困难的根本原因。")
+    print("\n注意 prefill 阶段没有这个问题：prefill 受算力限制，MoE 减少")
+    print("计算量的收益直接兑现。因此 MoE 的 prefill 划算、decode 吃亏，")
+    print("两侧的最优配置差异比稠密模型更大，更适合 PD 分离（第 10 章）。")
 
     print("\n专家并行（EP）：把专家分布到多张卡上，每张卡持有部分专家。")
     print("  通信：token 要发到持有对应专家的卡（all-to-all），算完再发回")
